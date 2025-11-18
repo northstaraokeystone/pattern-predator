@@ -195,10 +195,15 @@ class Trainer:
 
     def load_model(self):
         if os.path.exists("model.pkl"):
-            with open("model.pkl", "rb") as f:
-                self.model.w, self.model.b, self.global_stats, self.ai_level = (
-                    pickle.load(f)
-                )
+            try:
+                with open("model.pkl", "rb") as f:
+                    self.model.w, self.model.b, self.global_stats, self.ai_level = (
+                        pickle.load(f)
+                    )
+            except (EOFError, pickle.UnpicklingError, Exception) as e:
+                # Handle corrupt/empty file: Delete and fallback to defaults (bootstrap will run next)
+                st.warning(f"Corrupt model file detected: {str(e)}. Resetting model.")
+                os.remove("model.pkl")
 
 
 # Streamlit UI
