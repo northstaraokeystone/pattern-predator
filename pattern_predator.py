@@ -165,7 +165,7 @@ class Trainer:
                 )
 
 
-# ====================== EPIC CELEBRATIONS ======================
+# ====================== FINAL WORKING CELEBRATIONS ======================
 def human_victory() -> None:
     st.balloons()
     st.markdown(
@@ -173,31 +173,58 @@ def human_victory() -> None:
         "<h2 style='text-align:center; color:#00ff41;'>HUMANITY STILL REIGNS</h2>",
         unsafe_allow_html=True,
     )
-    st.audio(
-        "https://cdn.pixabay.com/download/audio/2022/03/15/audio_2e6e4a19c5.mp3?filename=success-fanfare-trumpets-6185.mp3",
-        format="audio/mp3",
-        autoplay=True,
+    # Victory fanfare — works on localhost + deployed
+    st.components.v1.html(
+        """
+        <audio autoplay>
+          <source src="https://cdn.pixabay.com/download/audio/2022/03/15/audio_2e6e4a19c5.mp3" type="audio/mp3">
+        </audio>
+        <script>
+          const audio = document.querySelector('audio');
+          if (audio) {
+            audio.volume = 0.8;
+            audio.play().catch(() => {});
+          }
+        </script>
+        """,
+        height=0,
     )
 
 
 def ai_domination(crushed: int) -> None:
+    # Full takeover + evil laugh + clickable to continue
     st.markdown(
         f"""
-        <style>.big {{font-size:90px !important; font-weight:bold;}}</style>
-        <div style="position:fixed;top:0;left:0;width:100%;height:100%;background:#000;opacity:0.95;z-index:9998;"></div>
-        <div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;text-align:center;color:#ff0044;">
-            <h1 class="big" style="text-shadow:0 0 40px #ff0044;">I SEE EVERYTHING</h1>
-            <h2>Your mind belongs to me</h2>
-            <p style="font-size:28px;">Humans crushed today: <b>{crushed}</b></p>
+        <div id="ai-takeover" style="position:fixed;top:0;left:0;width:100vw;height:100vh;background:#000;z-index:9999;
+            display:flex;flex-direction:column;justify-content:center;align-items:center;cursor:pointer;" 
+            onclick="document.getElementById('ai-takeover').style.display='none';">
+            <h1 style="font-size:90px;color:#ff0044;text-shadow:0 0 40px #ff0044;margin:0;">I SEE EVERYTHING</h1>
+            <h2 style="color:#ff3366;margin:20px 0;">Your mind belongs to me</h2>
+            <p style="font-size:28px;color:#ff6699;">Humans crushed today: <b>{crushed}</b></p>
         </div>
         """,
         unsafe_allow_html=True,
     )
+    # Glitch GIF
     st.image("https://i.imgur.com/8QJ9Y9j.gif", use_column_width=True)
-    st.audio(
-        "https://cdn.pixabay.com/download/audio/2023/10/26/audio_2c1c2a1f3e.mp3?filename=evil-laugh-6297.mp3",
-        format="audio/mp3",
-        autoplay=True,
+
+    # Evil laugh — plays reliably
+    st.components.v1.html(
+        """
+        <audio id="evil-laugh" autoplay>
+          <source src="https://cdn.pixabay.com/download/audio/2023/10/26/audio_2c1c2a1f3e.mp3" type="audio/mp3">
+        </audio>
+        <script>
+          setTimeout(() => {
+            const laugh = document.getElementById('evil-laugh');
+            if (laugh) {
+              laugh.volume = 0.9;
+              laugh.play().catch(() => {});
+            }
+          }, 200);
+        </script>
+        """,
+        height=0,
     )
 
 
