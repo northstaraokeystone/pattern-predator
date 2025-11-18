@@ -1,6 +1,7 @@
 import os
 import pickle
 import random
+import time
 
 import numpy as np
 import streamlit as st
@@ -16,6 +17,7 @@ class Config:
     epsilon_hard = 0.05
     rounds_to_win = 3  # Best of 3
     bootstrap_games = 100
+    guess_delay = 0.5  # seconds per guess in animation
 
 
 # Feature Extractor: Simple history
@@ -122,7 +124,7 @@ class Trainer:
             self.model.update(phi, target, delta)
             history.append(user_choice)
         self.save_model()
-        # Compute scores here (same as env.compute_scores logic)
+        # Compute scores here
         ai_score = sum(1 for u, a in zip(user_sequence, ai_guesses) if u == a)
         user_score = Config.sequence_length - ai_score
         ai_streak, user_streak = 0, 0
@@ -148,6 +150,7 @@ class Trainer:
             else 0
         )
         self.ai_level = "Hard" if win_rate > 0.6 else "Easy"
+        return ai_score, user_score
 
     def save_model(self):
         with open("model.pkl", "wb") as f:
@@ -165,7 +168,6 @@ class Trainer:
 
 # Streamlit UI
 def main():
-    st.write()  # To confirm you're running the latest
     st.title("Pattern Predator 🧠")
     st.markdown(
         "Outsmart the AI! Pick a 5-shape sequence—it'll try to predict you. Best of 3 rounds."
@@ -177,6 +179,10 @@ def main():
         st.session_state.scores = {"user": 0, "ai": 0}
         st.session_state.user_sequence = []
         st.session_state.ai_guesses = []
+        st.session_state.predicting = False
+        st.session_state.current_guess = 0
+        st.session_state.history = []
+        st.session_state.reveal_complete = False
 
     # Sidebar: Stats & Share
     with st.sidebar:
@@ -194,7 +200,10 @@ def main():
             st.session_state.scores = {"user": 0, "ai": 0}
             st.session_state.user_sequence = []
             st.session_state.ai_guesses = []
-        # Handle secrets gracefully
+            st.session_state.predicting = False
+            st.session_state.current_guess = 0
+            st.session_state.history = []
+            st.session_state.reveal_complete = False
         try:
             url = st.secrets["app_url"]
         except:
@@ -207,7 +216,10 @@ def main():
 
     # Main: Input sequence - single row of buttons, append on click
     shapes = ["⭕️", "■", "🔺"]
-    if len(st.session_state.user_sequence) < Config.sequence_length:
+    if (
+        len(st.session_state.user_sequence) < Config.sequence_length
+        and not st.session_state.predicting
+    ):
         col1, col2, col3 = st.columns(3)
         if col1.button(shapes[0], key="c0"):
             st.session_state.user_sequence.append(0)
@@ -222,46 +234,45 @@ def main():
     )
     st.write(f"Your Sequence: {seq_str}")
 
-    if len(st.session_state.user_sequence) == Config.sequence_length and st.button(
-        "Submit & Let AI Predict"
+    if (
+        len(st.session_state.user_sequence) == Config.sequence_length
+        and st.button("Submit & Let AI Predict")
+        and not st.session_state.predicting
     ):
-        with st.spinner("AI Predicting..."):
-            history = []
-            epsilon = (
-                Config.epsilon_easy
-                if trainer.ai_level == "Easy"
-                else Config.epsilon_hard
-            )
-            for _ in range(Config.sequence_length):
-                guess = trainer.guess(history, epsilon)
-                st.session_state.ai_guesses.append(guess)
-                history.append(
-                    st.session_state.user_sequence[len(st.session_state.ai_guesses) - 1]
-                )  # append actual after guess
+        st.session_state.predicting = True
+        st.session_state.current_guess = 0
+        st.session_state.ai_guesses = []
+        st.session_state.history = []
+        st.session_state.reveal_complete = False
+        st.rerun()
 
-        # Reveal
+    if st.session_state.predicting:
+        epsilon = (
+            Config.epsilon_easy if trainer.ai_level == "Easy" else Config.epsilon_hard
+        )
+        if st.session_state.current_guess < Config.sequence_length:
+            with st.spinner(
+                f"AI thinking on guess {st.session_state.current_guess + 1}..."
+            ):
+                time.sleep(Config.guess_delay)
+                guess = trainer.guess(st.session_state.history, epsilon)
+                st.session_state.ai_guesses.append(guess)
+                st.session_state.history.append(
+                    st.session_state.user_sequence[st.session_state.current_guess]
+                )
+                st.session_state.current_guess += 1
+                st.rerun()
+        else:
+            st.session_state.predicting = False
+            st.session_state.reveal_complete = True
+            st.rerun()
+
+    if st.session_state.reveal_complete:
         ai_str = "".join(shapes[g] for g in st.session_state.ai_guesses)
         st.write(f"AI Guesses: {ai_str}")
-        ai_score = sum(
-            1
-            for u, a in zip(st.session_state.user_sequence, st.session_state.ai_guesses)
-            if u == a
-        )
-        user_score = Config.sequence_length - ai_score
-        # Streak bonus (duplicated from compute_scores for simplicity here)
-        ai_streak, user_streak = 0, 0
-        max_ai, max_user = 0, 0
-        for u, a in zip(st.session_state.user_sequence, st.session_state.ai_guesses):
-            if u == a:
-                ai_streak += 1
-                user_streak = 0
-                max_ai = max(max_ai, ai_streak)
-            else:
-                user_streak += 1
-                ai_streak = 0
-                max_user = max(max_user, user_streak)
-        ai_score += 1 if max_ai >= 3 else 0
-        user_score += 1 if max_user >= 3 else 0
+        ai_score, user_score = trainer.train_from_game(
+            st.session_state.user_sequence, st.session_state.ai_guesses
+        )  # Returns scores after train
         st.write(f"Scores: You {user_score} | AI {ai_score}")
 
         # Update scores
@@ -273,18 +284,16 @@ def main():
         st.write(
             f"Overall: You {st.session_state.scores['user']} | AI {st.session_state.scores['ai']}"
         )
-
-        # Train
-        trainer.train_from_game(
-            st.session_state.user_sequence, st.session_state.ai_guesses
-        )
         st.success("AI learned from your play!")
 
-        # Next round or end
+        # Next round or end - auto-rerun to show input
         if max(st.session_state.scores.values()) < Config.rounds_to_win:
             st.session_state.round += 1
             st.session_state.user_sequence = []
             st.session_state.ai_guesses = []
+            st.session_state.reveal_complete = False
+            time.sleep(1)  # Short pause for user to read
+            st.rerun()
         else:
             winner = (
                 "You"
@@ -301,6 +310,7 @@ def main():
                 st.session_state.scores = {"user": 0, "ai": 0}
                 st.session_state.user_sequence = []
                 st.session_state.ai_guesses = []
+                st.session_state.reveal_complete = False
 
 
 if __name__ == "__main__":
