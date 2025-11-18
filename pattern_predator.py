@@ -1,10 +1,16 @@
+try:
+    import streamlit as st
+except ModuleNotFoundError:
+    raise SystemExit(
+        "Missing dependency 'streamlit'. Install with: pip install -r requirements.txt"
+    )
+
 import os
 import pickle
 import random
 import time
 
 import numpy as np
-import streamlit as st
 
 
 # Config (simple hypers)
@@ -206,7 +212,7 @@ def main():
             st.session_state.reveal_complete = False
         try:
             url = st.secrets["app_url"]
-        except:
+        except Exception:
             url = "http://localhost:8501"  # Default for local testing
         st.markdown(
             "Share your win: [LinkedIn Post](https://www.linkedin.com/sharing/share-offsite/?url={url})".format(
