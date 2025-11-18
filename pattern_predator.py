@@ -165,9 +165,7 @@ class Trainer:
 
 # Streamlit UI
 def main():
-    st.write(
-        "Debug: Code Version 3 - With Secrets Fix"
-    )  # To confirm you're running the latest
+    st.write()  # To confirm you're running the latest
     st.title("Pattern Predator 🧠")
     st.markdown(
         "Outsmart the AI! Pick a 5-shape sequence—it'll try to predict you. Best of 3 rounds."
