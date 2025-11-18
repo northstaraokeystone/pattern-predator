@@ -236,8 +236,8 @@ def main():
 
     if (
         len(st.session_state.user_sequence) == Config.sequence_length
-        and st.button("Submit & Let AI Predict")
         and not st.session_state.predicting
+        and st.button("Submit & Let AI Predict")
     ):
         st.session_state.predicting = True
         st.session_state.current_guess = 0
