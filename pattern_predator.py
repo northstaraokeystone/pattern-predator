@@ -3,6 +3,7 @@ import pickle
 import random
 import sys
 import time
+from typing import List
 
 import numpy as np
 import streamlit as st
@@ -18,28 +19,27 @@ class Config:
     epsilon_hard = 0.05
     rounds_to_win = 3
     bootstrap_games = 100
-    guess_delay = 0.5  # seconds per AI guess reveal
+    guess_delay = 0.5  # seconds per guess in animation
 
 
 # ====================== ML CORE ======================
 class FeatureExtractor:
-    def __init__(self):
+    def __init__(self) -> None:
         self.dim = Config.feature_dim
 
-    def encode(self, history):
+    def encode(self, history: List[int]) -> np.ndarray:
         phi = np.zeros(self.dim)
-        if len(history) >= 1:
-            phi[history[-1]] = 1
-        if len(history) >= 2:
-            phi[6 + history[-2]] = 1
-        streak = 1
-        for i in range(len(history) - 2, -1, -1):
-            if history[i] == history[-1]:
-                streak += 1
-            else:
-                break
-        phi[12] = streak / 5.0
         if history:
+            phi[history[-1]] = 1
+            if len(history) >= 2:
+                phi[6 + history[-2]] = 1
+            streak = 1
+            for i in range(len(history) - 2, -1, -1):
+                if history[i] == history[-1]:
+                    streak += 1
+                else:
+                    break
+            phi[12] = streak / 5.0
             phi[13] = len(set(history)) / len(history)
             for i in range(3):
                 phi[14 + i] = history.count(i) / len(history)
@@ -47,15 +47,15 @@ class FeatureExtractor:
 
 
 class LinearModel:
-    def __init__(self, dim):
+    def __init__(self, dim: int) -> None:
         self.w = np.zeros((3, dim))
         self.b = np.zeros(3)
 
-    def predict_probs(self, phi):
-        logits = np.dot(self.w, phi) + self.b
-        return np.exp(logits) / np.sum(np.exp(logits))
+    def predict_probs(self, phi: np.ndarray) -> np.ndarray:
+        logits = self.w @ phi + self.b
+        return np.exp(logits) / np.exp(logits).sum()
 
-    def update(self, phi, target, delta):
+    def update(self, phi: np.ndarray, target: int, delta: float) -> None:
         probs = self.predict_probs(phi)
         grad = np.outer(probs, phi)
         grad[target] -= phi
@@ -65,20 +65,21 @@ class LinearModel:
 
 
 class Agent:
-    def __init__(self, model, extractor):
+    def __init__(self, model: LinearModel, extractor: FeatureExtractor) -> None:
         self.model = model
         self.extractor = extractor
 
-    def guess_next(self, history, epsilon):
+    def guess_next(self, history: List[int], epsilon: float) -> int:
         phi = self.extractor.encode(history)
-        probs = self.model.predict_probs(phi)
         return (
-            random.randint(0, 2) if random.random() < epsilon else int(np.argmax(probs))
+            random.randint(0, 2)
+            if random.random() < epsilon
+            else int(np.argmax(self.model.predict_probs(phi)))
         )
 
 
 class Trainer:
-    def __init__(self):
+    def __init__(self) -> None:
         self.extractor = FeatureExtractor()
         self.model = LinearModel(Config.feature_dim)
         self.global_stats = {"plays": 0, "ai_wins": 0}
@@ -86,7 +87,7 @@ class Trainer:
         self.load_model()
         self.bootstrap_if_needed()
 
-    def bootstrap_if_needed(self):
+    def bootstrap_if_needed(self) -> None:
         if not os.path.exists("model.pkl"):
             for _ in range(Config.bootstrap_games):
                 history = [
@@ -100,30 +101,30 @@ class Trainer:
                 self.model.update(phi, target, delta)
             self.save_model()
 
-    def guess(self, history, epsilon):
-        return self.agent.guess_next(history, epsilon)
+    def guess(self, history: List[int], epsilon: float) -> int:
+        return Agent(self.model, self.extractor).guess_next(history, epsilon)
 
-    @property
-    def agent(self):
-        return Agent(self.model, self.extractor)
-
-    def train_from_game(self, user_seq, ai_guesses):
-        history = []
+    def train_from_game(
+        self, user_seq: List[int], ai_guesses: List[int]
+    ) -> tuple[int, int]:
+        history: List[int] = []
         for u, a in zip(user_seq, ai_guesses):
             phi = self.extractor.encode(history)
             delta = 1 if a == u else -1
             self.model.update(phi, u, delta)
             history.append(u)
+
         self.save_model()
-        # Score calculation
+
         ai_score = sum(1 for u, a in zip(user_seq, ai_guesses) if u == a)
         user_score = Config.sequence_length - ai_score
+
+        from itertools import groupby
+
         ai_streak = max(
             (
                 len(list(g))
-                for k, g in __import__("itertools").groupby(
-                    (u == a for u, a in zip(user_seq, ai_guesses))
-                )
+                for k, g in groupby((u == a for u, a in zip(user_seq, ai_guesses)))
                 if k
             ),
             default=0,
@@ -131,15 +132,14 @@ class Trainer:
         user_streak = max(
             (
                 len(list(g))
-                for k, g in __import__("itertools").groupby(
-                    (u != a for u, a in zip(user_seq, ai_guesses))
-                )
+                for k, g in groupby((u != a for u, a in zip(user_seq, ai_guesses)))
                 if k
             ),
             default=0,
         )
         ai_score += 1 if ai_streak >= 3 else 0
         user_score += 1 if user_streak >= 3 else 0
+
         self.global_stats["plays"] += 1
         if ai_score > user_score:
             self.global_stats["ai_wins"] += 1
@@ -148,15 +148,16 @@ class Trainer:
             if self.global_stats["ai_wins"] / self.global_stats["plays"] > 0.6
             else "Easy"
         )
+
         return user_score, ai_score
 
-    def save_model(self):
+    def save_model(self) -> None:
         with open("model.pkl", "wb") as f:
             pickle.dump(
                 (self.model.w, self.model.b, self.global_stats, self.ai_level), f
             )
 
-    def load_model(self):
+    def load_model(self) -> None:
         if os.path.exists("model.pkl"):
             with open("model.pkl", "rb") as f:
                 self.model.w, self.model.b, self.global_stats, self.ai_level = (
@@ -164,11 +165,12 @@ class Trainer:
                 )
 
 
-# ====================== CELEBRATIONS ======================
-def human_victory():
+# ====================== EPIC CELEBRATIONS ======================
+def human_victory() -> None:
     st.balloons()
     st.markdown(
-        "<h1 style='text-align:center; color:#00ff41; text-shadow:0 0 30px #00ff41;'>YOU DEFEATED THE AI!</h1><h2 style='text-align:center; color:#00ff41;'>HUMANITY PREVAILS</h2>",
+        "<h1 style='text-align:center; color:#00ff41; text-shadow:0 0 30px #00ff41;'>YOU DEFEATED THE AI!</h1>"
+        "<h2 style='text-align:center; color:#00ff41;'>HUMANITY STILL REIGNS</h2>",
         unsafe_allow_html=True,
     )
     st.audio(
@@ -178,17 +180,17 @@ def human_victory():
     )
 
 
-def ai_domination(crushed_count):
+def ai_domination(crushed: int) -> None:
     st.markdown(
         f"""
-    <style>.big {{font-size:90px !important; font-weight:bold;}}</style>
-    <div style="position:fixed;top:0;left:0;width:100%;height:100%;background:#000;opacity:0.95;z-index:9998;"></div>
-    <div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;text-align:center;color:#ff0044;">
-        <h1 class="big" style="text-shadow:0 0 40px #ff0044;">I SEE EVERYTHING</h1>
-        <h2>Your mind belongs to me</h2>
-        <p style="font-size:28px;">Humans crushed today: <b>{crushed_count}</b></p>
-    </div>
-    """,
+        <style>.big {{font-size:90px !important; font-weight:bold;}}</style>
+        <div style="position:fixed;top:0;left:0;width:100%;height:100%;background:#000;opacity:0.95;z-index:9998;"></div>
+        <div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;text-align:center;color:#ff0044;">
+            <h1 class="big" style="text-shadow:0 0 40px #ff0044;">I SEE EVERYTHING</h1>
+            <h2>Your mind belongs to me</h2>
+            <p style="font-size:28px;">Humans crushed today: <b>{crushed}</b></p>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
     st.image("https://i.imgur.com/8QJ9Y9j.gif", use_column_width=True)
@@ -200,14 +202,16 @@ def ai_domination(crushed_count):
 
 
 # ====================== MAIN APP ======================
-def main():
+def main() -> None:
+    st.set_page_config(page_title="Pattern Predator", page_icon="🧠")
     st.title("Pattern Predator 🧠")
     st.markdown(
-        "Outsmart the AI! Pick a 5-shape sequence—it'll try to predict you. Best of 3 rounds."
+        "Outsmart the AI! Pick a 5-shape sequence — it'll try to predict you. Best of 3 rounds."
     )
+
     trainer = Trainer()
 
-    # Init session state
+    # Session state init
     defaults = {
         "round": 1,
         "scores": {"user": 0, "ai": 0},
@@ -227,12 +231,14 @@ def main():
         st.header("AI Stats")
         plays = trainer.global_stats["plays"]
         win_rate = (trainer.global_stats["ai_wins"] / plays * 100) if plays else 0
-        st.write(f"Level: **{trainer.ai_level}**")
-        st.write(f"Global AI Win %: {win_rate:.1f}%")
-        st.write(f"Plays Today: {plays}")
+        st.write(f"**Level:** {trainer.ai_level}")
+        st.write(f"**Global AI Win %:** {win_rate:.1f}%")
+        st.write(f"**Plays Today:** {plays}")
         if st.button("Reset Game"):
-            [st.session_state.update({k: v}) for k, v in defaults.items()]
+            for k, v in defaults.items():
+                st.session_state[k] = v
             st.rerun()
+
         try:
             url = st.secrets["app_url"]
         except:
@@ -254,12 +260,13 @@ def main():
                 st.session_state.user_sequence.append(i)
                 st.rerun()
 
+    # Display sequence
     seq_display = "".join(shapes[i] for i in st.session_state.user_sequence) + "_" * (
         Config.sequence_length - len(st.session_state.user_sequence)
     )
-    st.write(f"Your Sequence: **{seq_display}**")
+    st.write(f"**Your Sequence:** {seq_display}")
 
-    # Submit button
+    # Submit button (only when ready)
     if (
         len(st.session_state.user_sequence) == Config.sequence_length
         and not st.session_state.predicting
@@ -303,12 +310,12 @@ def main():
 
     if st.session_state.reveal_complete:
         st.write(
-            f"AI Guesses: {''.join(shapes[g] for g in st.session_state.ai_guesses)}"
+            f"**AI Guesses:** {''.join(shapes[g] for g in st.session_state.ai_guesses)}"
         )
         user_score, ai_score = trainer.train_from_game(
             st.session_state.user_sequence, st.session_state.ai_guesses
         )
-        st.write(f"Scores → You: **{user_score}** | AI: **{ai_score}**")
+        st.write(f"**Scores** → You: **{user_score}** | AI: **{ai_score}**")
 
         if user_score > ai_score:
             st.session_state.scores["user"] += 1
@@ -318,19 +325,27 @@ def main():
             ai_domination(trainer.global_stats["ai_wins"])
 
         st.write(
-            f"Overall: You {st.session_state.scores['user']} – AI {st.session_state.scores['ai']}"
+            f"**Overall:** You {st.session_state.scores['user']} – AI {st.session_state.scores['ai']}"
         )
         st.success("AI learned from your play!")
 
+        # Next round or game over
         if max(st.session_state.scores.values()) < Config.rounds_to_win:
             st.session_state.round += 1
             time.sleep(2)
-            st.session_state.user_sequence = []
-            st.session_state.ai_guesses = []
-            st.session_state.predicting = False
-            st.session_state.current_guess = 0
-            st.session_state.history = []
-            st.session_state.reveal_complete = False
+            for key in [
+                "user_sequence",
+                "ai_guesses",
+                "predicting",
+                "current_guess",
+                "history",
+                "reveal_complete",
+            ]:
+                st.session_state[key] = (
+                    []
+                    if "sequence" in key or "guesses" in key or "history" in key
+                    else False
+                )
             st.rerun()
         else:
             winner = (
@@ -340,19 +355,19 @@ def main():
                 if st.session_state.scores["ai"] > st.session_state.scores["user"]
                 else "Tie"
             )
-            st.header(f"Game Over: **{winner} Wins!**")
-            share_text = f"I {'beat' if winner == 'You' else 'got owned by'} the AI in Pattern Predator! {st.session_state.scores['user']}-{st.session_state.scores['ai']} Try it: [link] #BeatTheAI"
+            st.header(f"**Game Over: {winner} Wins!**")
+            share_text = f"I {'beat' if winner == 'You' else 'got mind-read by'} the AI in Pattern Predator! {st.session_state.scores['user']}-{st.session_state.scores['ai']} Dare you? [link] #BeatTheAI"
             st.text_area("Share this:", share_text)
             if st.button("New Game"):
-                for k in defaults:
-                    st.session_state[k] = defaults[k]
+                for k, v in defaults.items():
+                    st.session_state[k] = v
                 st.rerun()
 
 
-# ====================== STANDALONE TRAINING MODE FOR GITHUB ACTIONS ======================
+# ====================== AUTOMATED TRAINING MODE ======================
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--train":
-        print("Starting automated training...")
+        print("Starting automated self-play training...")
         trainer = Trainer()
         for _ in range(15000):
             seq = [random.randint(0, 2) for _ in range(Config.sequence_length)]
@@ -368,8 +383,11 @@ if __name__ == "__main__":
                 guesses.append(g)
                 hist.append(seq[i])
             trainer.train_from_game(seq, guesses)
-        print(
-            f"Training complete. AI win rate: {trainer.global_stats['ai_wins'] / trainer.global_stats['plays']:.1%}"
+        win_rate = (
+            trainer.global_stats["ai_wins"] / trainer.global_stats["plays"]
+            if trainer.global_stats["plays"]
+            else 0
         )
+        print(f"Training complete. Final AI win rate: {win_rate:.2%}")
     else:
         main()
