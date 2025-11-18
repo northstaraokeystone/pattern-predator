@@ -18,44 +18,6 @@ class Config:
     bootstrap_games = 100
 
 
-# Env: Tracks sequence, scores
-class PatternEnv:
-    def __init__(self):
-        self.reset()
-
-    def reset(self):
-        self.user_sequence = [None] * Config.sequence_length
-        self.ai_guesses = []
-        self.current_step = 0
-
-    def add_user_choice(self, choice):
-        if self.current_step < Config.sequence_length:
-            self.user_sequence[self.current_step] = choice
-            self.current_step += 1
-
-    def is_complete(self):
-        return self.current_step == Config.sequence_length
-
-    def compute_scores(self):
-        ai_score = sum(1 for u, a in zip(self.user_sequence, self.ai_guesses) if u == a)
-        user_score = Config.sequence_length - ai_score
-        # Streak bonus
-        ai_streak, user_streak = 0, 0
-        max_ai, max_user = 0, 0
-        for u, a in zip(self.user_sequence, self.ai_guesses):
-            if u == a:
-                ai_streak += 1
-                user_streak = 0
-                max_ai = max(max_ai, ai_streak)
-            else:
-                user_streak += 1
-                ai_streak = 0
-                max_user = max(max_user, user_streak)
-        ai_score += 1 if max_ai >= 3 else 0
-        user_score += 1 if max_user >= 3 else 0
-        return ai_score, user_score
-
-
 # Feature Extractor: Simple history
 class FeatureExtractor:
     def __init__(self):
@@ -195,29 +157,28 @@ class Trainer:
 
     def load_model(self):
         if os.path.exists("model.pkl"):
-            try:
-                with open("model.pkl", "rb") as f:
-                    self.model.w, self.model.b, self.global_stats, self.ai_level = (
-                        pickle.load(f)
-                    )
-            except (EOFError, pickle.UnpicklingError, Exception) as e:
-                # Handle corrupt/empty file: Delete and fallback to defaults (bootstrap will run next)
-                st.warning(f"Corrupt model file detected: {str(e)}. Resetting model.")
-                os.remove("model.pkl")
+            with open("model.pkl", "rb") as f:
+                self.model.w, self.model.b, self.global_stats, self.ai_level = (
+                    pickle.load(f)
+                )
 
 
 # Streamlit UI
 def main():
+    st.write(
+        "Debug: Code Version 3 - With Secrets Fix"
+    )  # To confirm you're running the latest
     st.title("Pattern Predator 🧠")
     st.markdown(
         "Outsmart the AI! Pick a 5-shape sequence—it'll try to predict you. Best of 3 rounds."
     )
     trainer = Trainer()
-    env = PatternEnv()
 
     if "round" not in st.session_state:
         st.session_state.round = 1
         st.session_state.scores = {"user": 0, "ai": 0}
+        st.session_state.user_sequence = []
+        st.session_state.ai_guesses = []
 
     # Sidebar: Stats & Share
     with st.sidebar:
@@ -233,30 +194,39 @@ def main():
         if st.button("Reset Game"):
             st.session_state.round = 1
             st.session_state.scores = {"user": 0, "ai": 0}
-            env.reset()
+            st.session_state.user_sequence = []
+            st.session_state.ai_guesses = []
+        # Handle secrets gracefully
+        try:
+            url = st.secrets["app_url"]
+        except:
+            url = "http://localhost:8501"  # Default for local testing
         st.markdown(
             "Share your win: [LinkedIn Post](https://www.linkedin.com/sharing/share-offsite/?url={url})".format(
-                url=st.secrets.get("app_url", "your-app-url")
+                url=url
             )
         )
 
-    # Main: Input sequence
-    col1, col2, col3 = st.columns(3)
+    # Main: Input sequence - single row of buttons, append on click
     shapes = ["⭕️", "■", "🔺"]
-    for i in range(Config.sequence_length):
-        if env.user_sequence[i] is None:
-            if col1.button(shapes[0], key=f"c0_{i}"):
-                env.add_user_choice(0)
-            if col2.button(shapes[1], key=f"c1_{i}"):
-                env.add_user_choice(1)
-            if col3.button(shapes[2], key=f"c2_{i}"):
-                env.add_user_choice(2)
+    if len(st.session_state.user_sequence) < Config.sequence_length:
+        col1, col2, col3 = st.columns(3)
+        if col1.button(shapes[0], key="c0"):
+            st.session_state.user_sequence.append(0)
+        if col2.button(shapes[1], key="c1"):
+            st.session_state.user_sequence.append(1)
+        if col3.button(shapes[2], key="c2"):
+            st.session_state.user_sequence.append(2)
 
     # Display current sequence
-    seq_str = "".join(shapes[c] if c is not None else "_" for c in env.user_sequence)
+    seq_str = "".join(shapes[c] for c in st.session_state.user_sequence) + "_" * (
+        Config.sequence_length - len(st.session_state.user_sequence)
+    )
     st.write(f"Your Sequence: {seq_str}")
 
-    if env.is_complete() and st.button("Submit & Let AI Predict"):
+    if len(st.session_state.user_sequence) == Config.sequence_length and st.button(
+        "Submit & Let AI Predict"
+    ):
         with st.spinner("AI Predicting..."):
             history = []
             epsilon = (
@@ -266,15 +236,34 @@ def main():
             )
             for _ in range(Config.sequence_length):
                 guess = trainer.guess(history, epsilon)
-                env.ai_guesses.append(guess)
+                st.session_state.ai_guesses.append(guess)
                 history.append(
-                    env.user_sequence[len(env.ai_guesses) - 1]
+                    st.session_state.user_sequence[len(st.session_state.ai_guesses) - 1]
                 )  # append actual after guess
 
         # Reveal
-        ai_str = "".join(shapes[g] for g in env.ai_guesses)
+        ai_str = "".join(shapes[g] for g in st.session_state.ai_guesses)
         st.write(f"AI Guesses: {ai_str}")
-        ai_score, user_score = env.compute_scores()
+        ai_score = sum(
+            1
+            for u, a in zip(st.session_state.user_sequence, st.session_state.ai_guesses)
+            if u == a
+        )
+        user_score = Config.sequence_length - ai_score
+        # Streak bonus (duplicated from compute_scores for simplicity here)
+        ai_streak, user_streak = 0, 0
+        max_ai, max_user = 0, 0
+        for u, a in zip(st.session_state.user_sequence, st.session_state.ai_guesses):
+            if u == a:
+                ai_streak += 1
+                user_streak = 0
+                max_ai = max(max_ai, ai_streak)
+            else:
+                user_streak += 1
+                ai_streak = 0
+                max_user = max(max_user, user_streak)
+        ai_score += 1 if max_ai >= 3 else 0
+        user_score += 1 if max_user >= 3 else 0
         st.write(f"Scores: You {user_score} | AI {ai_score}")
 
         # Update scores
@@ -288,13 +277,16 @@ def main():
         )
 
         # Train
-        trainer.train_from_game(env.user_sequence, env.ai_guesses)
+        trainer.train_from_game(
+            st.session_state.user_sequence, st.session_state.ai_guesses
+        )
         st.success("AI learned from your play!")
 
         # Next round or end
         if max(st.session_state.scores.values()) < Config.rounds_to_win:
             st.session_state.round += 1
-            env.reset()
+            st.session_state.user_sequence = []
+            st.session_state.ai_guesses = []
         else:
             winner = (
                 "You"
@@ -309,7 +301,8 @@ def main():
             if st.button("New Game"):
                 st.session_state.round = 1
                 st.session_state.scores = {"user": 0, "ai": 0}
-                env.reset()
+                st.session_state.user_sequence = []
+                st.session_state.ai_guesses = []
 
 
 if __name__ == "__main__":
