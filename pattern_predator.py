@@ -3,7 +3,6 @@ import pickle
 import random
 import sys
 import time
-from typing import List
 
 import numpy as np
 
@@ -26,7 +25,7 @@ class FeatureExtractor:
     def __init__(self) -> None:
         self.dim = Config.feature_dim
 
-    def encode(self, history: List[int]) -> np.ndarray:
+    def encode(self, history: list[int]) -> np.ndarray:
         phi = np.zeros(self.dim)
         if not history:
             return phi
@@ -70,7 +69,7 @@ class Agent:
         self.model = model
         self.extractor = extractor
 
-    def guess_next(self, history: List[int], epsilon: float) -> int:
+    def guess_next(self, history: list[int], epsilon: float) -> int:
         phi = self.extractor.encode(history)
         return (
             random.randint(0, 2)
@@ -102,13 +101,13 @@ class Trainer:
                 self.model.update(phi, target, delta)
             self.save_model()
 
-    def guess(self, history: List[int], epsilon: float) -> int:
+    def guess(self, history: list[int], epsilon: float) -> int:
         return Agent(self.model, self.extractor).guess_next(history, epsilon)
 
     def train_from_game(
-        self, user_seq: List[int], ai_guesses: List[int]
+        self, user_seq: list[int], ai_guesses: list[int]
     ) -> tuple[int, int]:
-        history: List[int] = []
+        history: list[int] = []
         for u, a in zip(user_seq, ai_guesses):
             phi = self.extractor.encode(history)
             delta = 1 if a == u else -1
@@ -169,7 +168,7 @@ class Trainer:
 
 # ====================== FINAL SOUND & CELEBRATIONS ======================
 def human_victory() -> None:
-    import streamlit as st  # Local import — safe for --train mode
+    import streamlit as st  # Local import — absent in --train mode
 
     st.balloons()
     st.markdown(
@@ -192,7 +191,7 @@ def human_victory() -> None:
 
 
 def ai_domination(crushed: int) -> None:
-    import streamlit as st  # Local import — safe for --train mode
+    import streamlit as st  # Local import — absent in --train mode
 
     st.markdown(
         f"""
@@ -224,7 +223,7 @@ def ai_domination(crushed: int) -> None:
 
 # ====================== MAIN APP ======================
 def main() -> None:
-    import streamlit as st  # Streamlit only imported when running the app
+    import streamlit as st  # Imported only in UI mode
 
     st.set_page_config(page_title="Pattern Predator", page_icon="🧠")
     st.title("Pattern Predator 🧠")
@@ -261,10 +260,8 @@ def main() -> None:
             st.session_state.history = []
             st.session_state.reveal_complete = False
             st.rerun()
-        try:
-            url = st.secrets["app_url"]
-        except Exception:  # Ruff-safe except
-            url = "http://localhost:8501"
+
+        url = getattr(st, "secrets", {}).get("app_url", "http://localhost:8501")
         st.markdown(
             f"Share: [LinkedIn Post](https://www.linkedin.com/sharing/share-offsite/?url={url})"
         )
@@ -363,7 +360,11 @@ def main() -> None:
                 else "AI"
             )
             st.header(f"**Game Over: {winner} Wins!**")
-            share_text = f"I {'beat' if winner == 'You' else 'got mind-read by'} the AI in Pattern Predator! {st.session_state.scores['user']}-{st.session_state.scores['ai']} Dare you? [link] #BeatTheAI"
+            share_text = (
+                f"I {'beat' if winner == 'You' else 'got mind-read by'} the AI in "
+                f"Pattern Predator! {st.session_state.scores['user']}-"
+                f"{st.session_state.scores['ai']} Dare you? [link] #BeatTheAI"
+            )
             st.text_area("Share this:", share_text)
             if st.button("New Game"):
                 st.session_state.round = 1
@@ -379,13 +380,13 @@ def main() -> None:
 
 # ====================== AUTOMATED TRAINING MODE ======================
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "--train":
+    if "--train" in sys.argv[1:]:
         print("Starting automated self-play training...")
         trainer = Trainer()
         for _ in range(20000):
             seq = [random.randint(0, 2) for _ in range(Config.sequence_length)]
-            guesses = []
-            hist = []
+            guesses: list[int] = []
+            hist: list[int] = []
             eps = (
                 Config.epsilon_easy
                 if trainer.ai_level == "Easy"
@@ -402,7 +403,17 @@ if __name__ == "__main__":
             else 0
         )
         print(
-            f"Training complete! AI win rate: {win_rate:.2%} | Total plays: {trainer.global_stats['plays']:,}"
+            f"Training complete! AI win rate: {win_rate:.2%} | "
+            f"Total plays: {trainer.global_stats['plays']:,}"
         )
     else:
-        main()
+        try:
+            main()
+        except ModuleNotFoundError as exc:
+            if "streamlit" in str(exc):
+                print(
+                    "Streamlit is required for the UI. Install with "
+                    "'pip install streamlit' or run with '--train' for headless mode."
+                )
+                sys.exit(1)
+            raise
