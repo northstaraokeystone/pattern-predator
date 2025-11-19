@@ -144,11 +144,12 @@ class Trainer:
         self.global_stats["plays"] += 1
         if ai_score > user_score:
             self.global_stats["ai_wins"] += 1
-        self.ai_level = (
-            "Hard"
-            if self.global_stats["ai_wins"] / self.global_stats["plays"] > 0.6
-            else "Easy"
+        win_rate = (
+            self.global_stats["ai_wins"] / self.global_stats["plays"]
+            if self.global_stats["plays"]
+            else 0
         )
+        self.ai_level = "Hard" if win_rate > 0.6 else "Easy"
 
         return user_score, ai_score
 
@@ -166,8 +167,10 @@ class Trainer:
                 )
 
 
-# ====================== FINAL SOUND & CELEBRATIONS (100% WORKING) ======================
+# ====================== FINAL SOUND & CELEBRATIONS ======================
 def human_victory() -> None:
+    import streamlit as st  # Local import — safe for --train mode
+
     st.balloons()
     st.markdown(
         "<h1 style='text-align:center; color:#00ff41; text-shadow:0 0 30px #00ff41;'>YOU DEFEATED THE AI!</h1>"
@@ -189,6 +192,8 @@ def human_victory() -> None:
 
 
 def ai_domination(crushed: int) -> None:
+    import streamlit as st  # Local import — safe for --train mode
+
     st.markdown(
         f"""
         <div id="ai-takeover" style="position:fixed;top:0;left:0;width:100%;height:100%;background:#000;opacity:0.95;z-index:9999;
@@ -219,6 +224,8 @@ def ai_domination(crushed: int) -> None:
 
 # ====================== MAIN APP ======================
 def main() -> None:
+    import streamlit as st  # Streamlit only imported when running the app
+
     st.set_page_config(page_title="Pattern Predator", page_icon="🧠")
     st.title("Pattern Predator 🧠")
     st.markdown(
@@ -256,7 +263,7 @@ def main() -> None:
             st.rerun()
         try:
             url = st.secrets["app_url"]
-        except:
+        except Exception:  # Ruff-safe except
             url = "http://localhost:8501"
         st.markdown(
             f"Share: [LinkedIn Post](https://www.linkedin.com/sharing/share-offsite/?url={url})"
@@ -370,12 +377,12 @@ def main() -> None:
                 st.rerun()
 
 
-# ====================== AUTOMATED TRAINING MODE (GitHub Actions) ======================
+# ====================== AUTOMATED TRAINING MODE ======================
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--train":
         print("Starting automated self-play training...")
         trainer = Trainer()
-        for _ in range(20000):  # ~2-3 minutes on GitHub runner
+        for _ in range(20000):
             seq = [random.randint(0, 2) for _ in range(Config.sequence_length)]
             guesses = []
             hist = []
