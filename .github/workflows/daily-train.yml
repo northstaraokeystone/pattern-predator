@@ -2,8 +2,8 @@ name: Daily Pattern Predator Training
 
 on:
   schedule:
-    - cron: '0 3 * * *'  # Every day at 3:00 AM UTC → adjust if you want different time
-  workflow_dispatch:   # Allows manual trigger
+    - cron: '0 3 * * *'  # Every day at 3:00 AM UTC
+  workflow_dispatch:    # Allows manual trigger
 
 jobs:
   train:
@@ -19,16 +19,8 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install numpy
+      - name: Install dependencies
         run: pip install numpy
-
-      - name: Load existing model if exists
-        run: |
-          if [ -f model.pkl ]; then
-            echo "Existing model found"
-          else
-            echo "No model — will bootstrap"
-          fi
 
       - name: Run training
         run: python pattern_predator.py --train
