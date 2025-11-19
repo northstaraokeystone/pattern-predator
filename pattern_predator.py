@@ -6,7 +6,6 @@ import time
 from typing import List
 
 import numpy as np
-import streamlit as st
 
 
 # ====================== CONFIG ======================
