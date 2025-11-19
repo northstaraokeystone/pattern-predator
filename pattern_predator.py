@@ -1,3 +1,4 @@
+import argparse
 import os
 import pickle
 import random
@@ -168,7 +169,8 @@ class Trainer:
 
 # ====================== FINAL SOUND & CELEBRATIONS ======================
 def human_victory() -> None:
-    import streamlit as st  # Local import — absent in --train mode
+    # Local import — keeps --train mode free of Streamlit dependency
+    import streamlit as st
 
     st.balloons()
     st.markdown(
@@ -191,7 +193,8 @@ def human_victory() -> None:
 
 
 def ai_domination(crushed: int) -> None:
-    import streamlit as st  # Local import — absent in --train mode
+    # Local import — keeps --train mode free of Streamlit dependency
+    import streamlit as st
 
     st.markdown(
         f"""
@@ -223,7 +226,8 @@ def ai_domination(crushed: int) -> None:
 
 # ====================== MAIN APP ======================
 def main() -> None:
-    import streamlit as st  # Imported only in UI mode
+    # Imported only in UI mode
+    import streamlit as st
 
     st.set_page_config(page_title="Pattern Predator", page_icon="🧠")
     st.title("Pattern Predator 🧠")
@@ -261,7 +265,10 @@ def main() -> None:
             st.session_state.reveal_complete = False
             st.rerun()
 
-        url = getattr(st, "secrets", {}).get("app_url", "http://localhost:8501")
+        try:
+            url = st.secrets["app_url"]
+        except KeyError:
+            url = "http://localhost:8501"
         st.markdown(
             f"Share: [LinkedIn Post](https://www.linkedin.com/sharing/share-offsite/?url={url})"
         )
@@ -378,34 +385,43 @@ def main() -> None:
                 st.rerun()
 
 
-# ====================== AUTOMATED TRAINING MODE ======================
+# ====================== TRAINING MODE ======================
+def run_training() -> None:
+    print("Starting automated self-play training...")
+    trainer = Trainer()
+    for _ in range(20000):
+        seq = [random.randint(0, 2) for _ in range(Config.sequence_length)]
+        guesses: list[int] = []
+        hist: list[int] = []
+        eps = Config.epsilon_easy if trainer.ai_level == "Easy" else Config.epsilon_hard
+        for i in range(Config.sequence_length):
+            g = trainer.guess(hist, eps)
+            guesses.append(g)
+            hist.append(seq[i])
+        trainer.train_from_game(seq, guesses)
+    win_rate = (
+        trainer.global_stats["ai_wins"] / trainer.global_stats["plays"]
+        if trainer.global_stats["plays"]
+        else 0
+    )
+    print(
+        f"Training complete! AI win rate: {win_rate:.2%} | "
+        f"Total plays: {trainer.global_stats['plays']:,}"
+    )
+
+
+def _parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Pattern Predator")
+    parser.add_argument(
+        "--train", action="store_true", help="Run automated training (no UI)"
+    )
+    return parser.parse_args(argv)
+
+
 if __name__ == "__main__":
-    if "--train" in sys.argv[1:]:
-        print("Starting automated self-play training...")
-        trainer = Trainer()
-        for _ in range(20000):
-            seq = [random.randint(0, 2) for _ in range(Config.sequence_length)]
-            guesses: list[int] = []
-            hist: list[int] = []
-            eps = (
-                Config.epsilon_easy
-                if trainer.ai_level == "Easy"
-                else Config.epsilon_hard
-            )
-            for i in range(Config.sequence_length):
-                g = trainer.guess(hist, eps)
-                guesses.append(g)
-                hist.append(seq[i])
-            trainer.train_from_game(seq, guesses)
-        win_rate = (
-            trainer.global_stats["ai_wins"] / trainer.global_stats["plays"]
-            if trainer.global_stats["plays"]
-            else 0
-        )
-        print(
-            f"Training complete! AI win rate: {win_rate:.2%} | "
-            f"Total plays: {trainer.global_stats['plays']:,}"
-        )
+    args = _parse_args(sys.argv[1:])
+    if args.train:
+        run_training()
     else:
         try:
             main()
