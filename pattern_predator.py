@@ -371,12 +371,12 @@ def main() -> None:
                 st.rerun()
 
 
-# ====================== AUTOMATED TRAINING MODE ======================
+# ====================== AUTOMATED TRAINING MODE (GitHub Actions) ======================
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--train":
         print("Starting automated self-play training...")
         trainer = Trainer()
-        for _ in range(15000):
+        for _ in range(20000):  # ~2-3 minutes on GitHub runner
             seq = [random.randint(0, 2) for _ in range(Config.sequence_length)]
             guesses = []
             hist = []
@@ -390,8 +390,13 @@ if __name__ == "__main__":
                 guesses.append(g)
                 hist.append(seq[i])
             trainer.train_from_game(seq, guesses)
+        win_rate = (
+            trainer.global_stats["ai_wins"] / trainer.global_stats["plays"]
+            if trainer.global_stats["plays"]
+            else 0
+        )
         print(
-            f"Training complete. AI win rate: {trainer.global_stats['ai_wins'] / trainer.global_stats['plays']:.1%}"
+            f"Training complete! AI win rate: {win_rate:.2%} | Total plays: {trainer.global_stats['plays']:,}"
         )
     else:
         main()
