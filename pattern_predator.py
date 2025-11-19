@@ -1,11 +1,72 @@
-import argparse
 import os
 import pickle
 import random
 import sys
 import time
+import types
 
 import numpy as np
+
+
+# ====================== TRAIN-MODE STREAMLIT STUB ======================
+def _is_train_mode(args: list[str] | None = None) -> bool:
+    argv = sys.argv[1:] if args is None else args
+    return ("--train" in argv) or (os.environ.get("PP_MODE", "").lower() == "train")
+
+
+if _is_train_mode() and "streamlit" not in sys.modules:
+    # Inject a minimal stub so that any accidental top-level `import streamlit`
+    # won't crash in --train mode. No external dependency required.
+    st_mod = types.ModuleType("streamlit")
+
+    # Basic no-op functions used in the UI file (won't be called in --train).
+    def _noop(*_args, **_kwargs):
+        return None
+
+    class _NullCtx:
+        def __enter__(self):
+            return None
+
+        def __exit__(self, _exc_type, _exc, _tb):
+            return False
+
+    class _Col:
+        def button(self, *_args, **_kwargs):
+            return False
+
+    def columns(n: int):
+        return [_Col() for _ in range(n)]
+
+    # Sidebar stub with the methods our app uses.
+    class _Sidebar:
+        def header(self, *_args, **_kwargs):
+            return None
+
+        def write(self, *_args, **_kwargs):
+            return None
+
+        def button(self, *_args, **_kwargs):
+            return False
+
+    # Populate stubbed attributes.
+    st_mod.balloons = _noop
+    st_mod.markdown = _noop
+    st_mod.image = _noop
+    st_mod.set_page_config = _noop
+    st_mod.title = _noop
+    st_mod.write = _noop
+    st_mod.success = _noop
+    st_mod.text_area = _noop
+    st_mod.header = _noop
+    st_mod.button = lambda *_a, **_k: False
+    st_mod.columns = columns
+    st_mod.sidebar = _Sidebar()
+    st_mod.rerun = _noop
+    st_mod.spinner = lambda *_a, **_k: _NullCtx()
+    st_mod.session_state = {}
+    st_mod.secrets = {}
+
+    sys.modules["streamlit"] = st_mod  # type: ignore[assignment]
 
 
 # ====================== CONFIG ======================
@@ -169,8 +230,7 @@ class Trainer:
 
 # ====================== FINAL SOUND & CELEBRATIONS ======================
 def human_victory() -> None:
-    # Local import — keeps --train mode free of Streamlit dependency
-    import streamlit as st
+    import streamlit as st  # Local import — safe in UI, stubbed in --train
 
     st.balloons()
     st.markdown(
@@ -193,8 +253,7 @@ def human_victory() -> None:
 
 
 def ai_domination(crushed: int) -> None:
-    # Local import — keeps --train mode free of Streamlit dependency
-    import streamlit as st
+    import streamlit as st  # Local import — safe in UI, stubbed in --train
 
     st.markdown(
         f"""
@@ -226,8 +285,7 @@ def ai_domination(crushed: int) -> None:
 
 # ====================== MAIN APP ======================
 def main() -> None:
-    # Imported only in UI mode
-    import streamlit as st
+    import streamlit as st  # Imported only in UI mode (real or stub)
 
     st.set_page_config(page_title="Pattern Predator", page_icon="🧠")
     st.title("Pattern Predator 🧠")
@@ -238,14 +296,14 @@ def main() -> None:
     trainer = Trainer()
 
     if "round" not in st.session_state:
-        st.session_state.round = 1
-        st.session_state.scores = {"user": 0, "ai": 0}
-        st.session_state.user_sequence = []
-        st.session_state.ai_guesses = []
-        st.session_state.predicting = False
-        st.session_state.current_guess = 0
-        st.session_state.history = []
-        st.session_state.reveal_complete = False
+        st.session_state["round"] = 1
+        st.session_state["scores"] = {"user": 0, "ai": 0}
+        st.session_state["user_sequence"] = []
+        st.session_state["ai_guesses"] = []
+        st.session_state["predicting"] = False
+        st.session_state["current_guess"] = 0
+        st.session_state["history"] = []
+        st.session_state["reveal_complete"] = False
 
     with st.sidebar:
         st.header("AI Stats")
@@ -255,20 +313,17 @@ def main() -> None:
         st.write(f"**Global AI Win %:** {win_rate:.1f}%")
         st.write(f"**Plays Today:** {plays}")
         if st.button("Reset Game"):
-            st.session_state.round = 1
-            st.session_state.scores = {"user": 0, "ai": 0}
-            st.session_state.user_sequence = []
-            st.session_state.ai_guesses = []
-            st.session_state.predicting = False
-            st.session_state.current_guess = 0
-            st.session_state.history = []
-            st.session_state.reveal_complete = False
+            st.session_state["round"] = 1
+            st.session_state["scores"] = {"user": 0, "ai": 0}
+            st.session_state["user_sequence"] = []
+            st.session_state["ai_guesses"] = []
+            st.session_state["predicting"] = False
+            st.session_state["current_guess"] = 0
+            st.session_state["history"] = []
+            st.session_state["reveal_complete"] = False
             st.rerun()
 
-        try:
-            url = st.secrets["app_url"]
-        except KeyError:
-            url = "http://localhost:8501"
+        url = getattr(st, "secrets", {}).get("app_url", "http://localhost:8501")
         st.markdown(
             f"Share: [LinkedIn Post](https://www.linkedin.com/sharing/share-offsite/?url={url})"
         )
@@ -276,37 +331,37 @@ def main() -> None:
     shapes = ["⭕️", "■", "🔺"]
 
     if (
-        len(st.session_state.user_sequence) < Config.sequence_length
-        and not st.session_state.predicting
+        len(st.session_state["user_sequence"]) < Config.sequence_length
+        and not st.session_state["predicting"]
     ):
         cols = st.columns(3)
         for i, shape in enumerate(shapes):
             if cols[i].button(shape, key=f"btn_{i}"):
-                st.session_state.user_sequence.append(i)
+                st.session_state["user_sequence"].append(i)
                 st.rerun()
 
-    seq_display = "".join(shapes[i] for i in st.session_state.user_sequence) + "_" * (
-        Config.sequence_length - len(st.session_state.user_sequence)
-    )
+    seq_display = "".join(
+        shapes[i] for i in st.session_state["user_sequence"]
+    ) + "_" * (Config.sequence_length - len(st.session_state["user_sequence"]))
     st.write(f"**Your Sequence:** {seq_display}")
 
     if (
-        len(st.session_state.user_sequence) == Config.sequence_length
-        and not st.session_state.predicting
+        len(st.session_state["user_sequence"]) == Config.sequence_length
+        and not st.session_state["predicting"]
     ):
         if st.button("Submit & Let AI Predict"):
-            st.session_state.predicting = True
-            st.session_state.current_guess = 0
-            st.session_state.ai_guesses = []
-            st.session_state.history = []
+            st.session_state["predicting"] = True
+            st.session_state["current_guess"] = 0
+            st.session_state["ai_guesses"] = []
+            st.session_state["history"] = []
             st.rerun()
 
     if (
-        st.session_state.predicting
-        and st.session_state.current_guess < Config.sequence_length
+        st.session_state["predicting"]
+        and st.session_state["current_guess"] < Config.sequence_length
     ):
         with st.spinner(
-            f"AI reading your mind... ({st.session_state.current_guess + 1}/{Config.sequence_length})"
+            f"AI reading your mind... ({st.session_state['current_guess'] + 1}/{Config.sequence_length})"
         ):
             time.sleep(Config.guess_delay)
             epsilon = (
@@ -314,78 +369,78 @@ def main() -> None:
                 if trainer.ai_level == "Easy"
                 else Config.epsilon_hard
             )
-            guess = trainer.guess(st.session_state.history, epsilon)
-            st.session_state.ai_guesses.append(guess)
-            st.session_state.history.append(
-                st.session_state.user_sequence[st.session_state.current_guess]
+            guess = trainer.guess(st.session_state["history"], epsilon)
+            st.session_state["ai_guesses"].append(guess)
+            st.session_state["history"].append(
+                st.session_state["user_sequence"][st.session_state["current_guess"]]
             )
-            st.session_state.current_guess += 1
+            st.session_state["current_guess"] += 1
             st.rerun()
 
     if (
-        st.session_state.current_guess == Config.sequence_length
-        and not st.session_state.reveal_complete
+        st.session_state["current_guess"] == Config.sequence_length
+        and not st.session_state["reveal_complete"]
     ):
-        st.session_state.reveal_complete = True
+        st.session_state["reveal_complete"] = True
         st.rerun()
 
-    if st.session_state.reveal_complete:
+    if st.session_state["reveal_complete"]:
         st.write(
-            f"**AI Guesses:** {''.join(shapes[g] for g in st.session_state.ai_guesses)}"
+            f"**AI Guesses:** {''.join(shapes[g] for g in st.session_state['ai_guesses'])}"
         )
         user_score, ai_score = trainer.train_from_game(
-            st.session_state.user_sequence, st.session_state.ai_guesses
+            st.session_state["user_sequence"], st.session_state["ai_guesses"]
         )
         st.write(f"**Scores** → You: **{user_score}** | AI: **{ai_score}**")
 
         if user_score > ai_score:
-            st.session_state.scores["user"] += 1
+            st.session_state["scores"]["user"] += 1
             human_victory()
         else:
-            st.session_state.scores["ai"] += 1
+            st.session_state["scores"]["ai"] += 1
             ai_domination(trainer.global_stats["ai_wins"])
 
         st.write(
-            f"**Overall:** You {st.session_state.scores['user']} – AI {st.session_state.scores['ai']}"
+            f"**Overall:** You {st.session_state['scores']['user']} – AI {st.session_state['scores']['ai']}"
         )
         st.success("AI learned from your play!")
 
-        if max(st.session_state.scores.values()) < Config.rounds_to_win:
-            st.session_state.round += 1
+        if max(st.session_state["scores"].values()) < Config.rounds_to_win:
+            st.session_state["round"] += 1
             time.sleep(2)
-            st.session_state.user_sequence = []
-            st.session_state.ai_guesses = []
-            st.session_state.predicting = False
-            st.session_state.current_guess = 0
-            st.session_state.history = []
-            st.session_state.reveal_complete = False
+            st.session_state["user_sequence"] = []
+            st.session_state["ai_guesses"] = []
+            st.session_state["predicting"] = False
+            st.session_state["current_guess"] = 0
+            st.session_state["history"] = []
+            st.session_state["reveal_complete"] = False
             st.rerun()
         else:
             winner = (
                 "You"
-                if st.session_state.scores["user"] > st.session_state.scores["ai"]
+                if st.session_state["scores"]["user"] > st.session_state["scores"]["ai"]
                 else "AI"
             )
             st.header(f"**Game Over: {winner} Wins!**")
             share_text = (
                 f"I {'beat' if winner == 'You' else 'got mind-read by'} the AI in "
-                f"Pattern Predator! {st.session_state.scores['user']}-"
-                f"{st.session_state.scores['ai']} Dare you? [link] #BeatTheAI"
+                f"Pattern Predator! {st.session_state['scores']['user']}-"
+                f"{st.session_state['scores']['ai']} Dare you? [link] #BeatTheAI"
             )
             st.text_area("Share this:", share_text)
             if st.button("New Game"):
-                st.session_state.round = 1
-                st.session_state.scores = {"user": 0, "ai": 0}
-                st.session_state.user_sequence = []
-                st.session_state.ai_guesses = []
-                st.session_state.predicting = False
-                st.session_state.current_guess = 0
-                st.session_state.history = []
-                st.session_state.reveal_complete = False
+                st.session_state["round"] = 1
+                st.session_state["scores"] = {"user": 0, "ai": 0}
+                st.session_state["user_sequence"] = []
+                st.session_state["ai_guesses"] = []
+                st.session_state["predicting"] = False
+                st.session_state["current_guess"] = 0
+                st.session_state["history"] = []
+                st.session_state["reveal_complete"] = False
                 st.rerun()
 
 
-# ====================== TRAINING MODE ======================
+# ====================== TRAINING ENTRY ======================
 def run_training() -> None:
     print("Starting automated self-play training...")
     trainer = Trainer()
@@ -410,17 +465,8 @@ def run_training() -> None:
     )
 
 
-def _parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Pattern Predator")
-    parser.add_argument(
-        "--train", action="store_true", help="Run automated training (no UI)"
-    )
-    return parser.parse_args(argv)
-
-
 if __name__ == "__main__":
-    args = _parse_args(sys.argv[1:])
-    if args.train:
+    if _is_train_mode():
         run_training()
     else:
         try:
