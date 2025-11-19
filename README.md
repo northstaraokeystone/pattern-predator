@@ -52,4 +52,4 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 ---
 
-Built by [Your Name] with help from Grok. Share your high scores! 🚀
+Built with help from Grok. Share your high scores! 🚀
